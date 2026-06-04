@@ -1,3 +1,6 @@
+const { DefaultAzureCredential } = require("@azure/identity");
+const { BlobServiceClient } = require("@azure/storage-blob");
+
 const {
   authenticate,
   jsonResponseWithCorrelation,
@@ -5,11 +8,6 @@ const {
   preflightResponse,
 } = require("../shared/auth");
 const { emit, finishRequest, maskDeviceId, startRequest } = require("../shared/logging");
-
-const allData = [
-  { device_id: "E-001", value: 10 },
-  { device_id: "E-002", value: 20 },
-];
 
 module.exports = async function data(context, req) {
   const request = startRequest(context, req, "/api/data");
@@ -23,6 +21,35 @@ module.exports = async function data(context, req) {
   try {
     const auth = await authenticate(req);
     const { role, device_id } = auth.claims;
+
+    // --- AZURE STORAGE INTEGRATION START ---
+    const accountUrl = process.env.AZURE_STORAGE_ACCOUNT_URL;
+    if (!accountUrl) throw new Error("AZURE_STORAGE_ACCOUNT_URL is missing");
+
+    const credential = new DefaultAzureCredential();
+    const blobServiceClient = new BlobServiceClient(accountUrl, credential);
+
+    const containerClient = blobServiceClient.getContainerClient("datasets");
+    const blobClient = containerClient.getBlobClient("sensor_data.csv");
+    
+    const downloadResponse = await blobClient.downloadToBuffer();
+    const csvString = downloadResponse.toString();
+
+    const lines = csvString.split("\n").filter((line) => line.trim() !== "");
+    const headers = lines[0].split(",");
+    
+    // Parse CSV into the 'allData' format your existing code expects
+    const allData = lines.slice(1).map((line) => {
+      const values = line.split(",");
+      let obj = {};
+      headers.forEach((header, i) => {
+        let val = values[i].trim();
+        // Convert numeric values to actual Numbers for the frontend charts
+        obj[header.trim()] = isNaN(val) ? val : Number(val);
+      });
+      return obj;
+    });
+    // --- AZURE STORAGE INTEGRATION END ---
 
     let visibleData;
 
