@@ -12,6 +12,7 @@ const { emit, finishRequest, maskDeviceId, startRequest } = require("../shared/l
 module.exports = async function data(context, req) {
   const request = startRequest(context, req, "/api/data");
 
+  // Handle CORS preflight requests securely
   if (req.method === "OPTIONS") {
     context.res = preflightResponse(request.correlationId);
     finishRequest(context, request, 204);
@@ -19,43 +20,51 @@ module.exports = async function data(context, req) {
   }
 
   try {
+    // Authenticate user via Cognito JWT
     const auth = await authenticate(req);
     const { role, device_id } = auth.claims;
 
     // --- AZURE STORAGE INTEGRATION START ---
     const accountUrl = process.env.AZURE_STORAGE_ACCOUNT_URL;
-    if (!accountUrl) throw new Error("AZURE_STORAGE_ACCOUNT_URL is missing");
+    if (!accountUrl) {
+      throw new Error("AZURE_STORAGE_ACCOUNT_URL is missing in environment variables.");
+    }
 
+    // Connect using Managed Identity (No hardcoded passwords!)
     const credential = new DefaultAzureCredential();
     const blobServiceClient = new BlobServiceClient(accountUrl, credential);
 
     const containerClient = blobServiceClient.getContainerClient("datasets");
     const blobClient = containerClient.getBlobClient("sensor_data.csv");
     
+    // Download and decode the CSV file
     const downloadResponse = await blobClient.downloadToBuffer();
-    const csvString = downloadResponse.toString();
+    const csvString = downloadResponse.toString("utf-8");
 
-    const lines = csvString.split("\n").filter((line) => line.trim() !== "");
-    const headers = lines[0].split(",");
+    // Robust CSV Parsing (Handles both Windows \r\n and Linux \n line endings)
+    const lines = csvString.split(/\r?\n/).filter((line) => line.trim() !== "");
+    const headers = lines[0].split(",").map(h => h.trim());
     
-    // Parse CSV into the 'allData' format your existing code expects
     const allData = lines.slice(1).map((line) => {
       const values = line.split(",");
       let obj = {};
       headers.forEach((header, i) => {
-        let val = values[i].trim();
-        // Convert numeric values to actual Numbers for the frontend charts
-        obj[header.trim()] = isNaN(val) ? val : Number(val);
+        let val = values[i] ? values[i].trim() : "";
+        // Convert telemetry to Numbers for the frontend, leave IDs/Timestamps as Strings
+        obj[header] = isNaN(val) || val === "" ? val : Number(val);
       });
       return obj;
     });
     // --- AZURE STORAGE INTEGRATION END ---
 
+    // --- ROLE-BASED ACCESS CONTROL (RBAC) ---
     let visibleData;
 
     if (role === "admin") {
+      // Admins see all IoT devices
       visibleData = allData;
     } else if (role === "user") {
+      // Users must have a designated device_id in their Cognito profile
       if (!device_id) {
         emit(context, "warn", "authz.denied", {
           correlationId: request.correlationId,
@@ -65,17 +74,16 @@ module.exports = async function data(context, req) {
         });
         context.res = jsonResponseWithCorrelation(
           403,
-          {
-            error: "No device_id associated with this account",
-          },
+          { error: "No device_id associated with this account" },
           request.correlationId
         );
         finishRequest(context, request, 403);
         return;
       }
-
+      // Filter the cloud data down to just their device
       visibleData = allData.filter((item) => item.device_id === device_id);
     } else {
+      // Unknown role fallback
       emit(context, "warn", "authz.denied", {
         correlationId: request.correlationId,
         path: "/api/data",
@@ -99,6 +107,7 @@ module.exports = async function data(context, req) {
       returnedCount: visibleData.length,
     });
 
+    // Send the securely filtered JSON payload back to the React frontend
     context.res = jsonResponseWithCorrelation(
       200,
       {
@@ -109,6 +118,7 @@ module.exports = async function data(context, req) {
       request.correlationId
     );
     finishRequest(context, request, 200);
+
   } catch (error) {
     const normalized = normalizeError(error);
     emit(context, normalized.status >= 500 ? "error" : "warn", "auth.failed", {
