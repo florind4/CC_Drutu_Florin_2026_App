@@ -1,3 +1,5 @@
+// for docker cache
+
 import React, { useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
 import { API_BASE, COGNITO_DOMAIN, LOGOUT_URI, OIDC_CONFIG } from "./config";
