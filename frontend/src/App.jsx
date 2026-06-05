@@ -3,39 +3,31 @@ import { useAuth } from "react-oidc-context";
 import { API_BASE, LOGOUT_URI, OIDC_CONFIG } from "./config";
 import "./App.css";
 
-const CHART_POINTS = 24;
-const TABLE_POINTS = 50;
+// Backend /api/data returns CSV rows from sensor_data.csv.
+// Known columns: device_id, timestamp, kwh, location
+const CHART_POINTS = 10;
 
-function normalizeReading(item) {
-  const kwh = Number(item.kwh || 0);
-  return {
-    ...item,
-    temperature: item.temperature != null && item.temperature !== ""
-      ? Number(item.temperature)
-      : Number((20 + kwh * 3.5).toFixed(1)),
-    humidity: item.humidity != null && item.humidity !== ""
-      ? Number(item.humidity)
-      : Math.round(45 + kwh * 15),
-    power_kw: item.power_kw != null && item.power_kw !== ""
-      ? Number(item.power_kw)
-      : kwh,
-  };
+function sortByTimestamp(rows) {
+  return [...rows].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 }
 
-function scopeTelemetryData(rawData, deviceId) {
-  const latestDeviceId = [...rawData]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]?.device_id;
-  const activeDeviceId = deviceId || latestDeviceId;
-  const scoped = activeDeviceId
-    ? rawData.filter((item) => item.device_id === activeDeviceId)
-    : rawData;
+function pickChartSeries(rows, deviceId) {
+  if (!rows.length) return [];
 
-  return [...scoped]
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-    .map(normalizeReading);
+  let series = rows;
+  if (deviceId) {
+    series = rows.filter((row) => row.device_id === deviceId);
+  } else {
+    const latest = [...rows].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    if (latest?.device_id) {
+      series = rows.filter((row) => row.device_id === latest.device_id);
+    }
+  }
+
+  return sortByTimestamp(series).slice(-CHART_POINTS);
 }
 
-function TelemetryDashboard({ data, role, deviceId, loading, error }) {
+function TelemetryDashboard({ rows, role, deviceId, loading, error }) {
   if (loading) {
     return <p className="muted">Loading live telemetry data...</p>;
   }
@@ -44,15 +36,23 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
     return <p className="telemetry-error">{error}</p>;
   }
 
-  const chartData = data.slice(-CHART_POINTS);
-  const tableData = data.slice(-TABLE_POINTS);
-  const totalReadings = data.length;
-  const avgTemp = totalReadings > 0
-    ? (data.reduce((sum, item) => sum + Number(item.temperature || 0), 0) / totalReadings).toFixed(1)
-    : 0;
-  const totalPower = totalReadings > 0
-    ? data.reduce((sum, item) => sum + Number(item.power_kw || 0), 0).toFixed(1)
-    : 0;
+  if (!rows.length) {
+    return (
+      <p className="telemetry-empty">
+        No telemetry rows returned for role <strong>{role || "unknown"}</strong>
+        {deviceId ? <> and device <strong>{deviceId}</strong></> : null}.
+      </p>
+    );
+  }
+
+  const chartData = pickChartSeries(rows, deviceId);
+  const tableData = sortByTimestamp(rows).slice(-50);
+  const totalReadings = rows.length;
+  const avgKwh = (rows.reduce((sum, row) => sum + Number(row.kwh || 0), 0) / totalReadings).toFixed(3);
+  const totalKwh = rows.reduce((sum, row) => sum + Number(row.kwh || 0), 0).toFixed(1);
+  const chartMaxKwh = Math.max(...chartData.map((row) => Number(row.kwh || 0)), 0.1);
+  const chartMinKwh = Math.min(...chartData.map((row) => Number(row.kwh || 0)));
+  const chartRange = chartMaxKwh - chartMinKwh || 1;
 
   return (
     <div className="telemetry-dashboard">
@@ -60,7 +60,7 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
         <h2>IoT Device Telemetry Dashboard</h2>
         <p className="telemetry-meta">
           Logged in as: <strong>{role}</strong>
-          {deviceId && <span> | Device Context: <strong>{deviceId}</strong></span>}
+          {deviceId ? <span> | Device Context: <strong>{deviceId}</strong></span> : null}
         </p>
       </header>
 
@@ -70,18 +70,18 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
           <div className="telemetry-kpi-value">{totalReadings}</div>
         </div>
         <div className="telemetry-kpi telemetry-kpi-green">
-          <div className="telemetry-kpi-label">Avg Temperature</div>
-          <div className="telemetry-kpi-value">{avgTemp} °C</div>
+          <div className="telemetry-kpi-label">Avg Energy</div>
+          <div className="telemetry-kpi-value">{avgKwh} kWh</div>
         </div>
         <div className="telemetry-kpi telemetry-kpi-amber">
-          <div className="telemetry-kpi-label">Accumulated Load</div>
-          <div className="telemetry-kpi-value">{totalPower} kW</div>
+          <div className="telemetry-kpi-label">Total Energy</div>
+          <div className="telemetry-kpi-value">{totalKwh} kWh</div>
         </div>
       </div>
 
       <div className="telemetry-charts-grid">
         <div className="telemetry-panel">
-          <h3>Temperature Trajectory (°C)</h3>
+          <h3>Energy Trajectory (kWh)</h3>
           {chartData.length > 1 ? (
             <svg viewBox="0 0 500 200" className="telemetry-svg">
               <line x1="40" y1="20" x2="480" y2="20" stroke="#f1f5f9" strokeWidth="1" />
@@ -89,10 +89,10 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
               <line x1="40" y1="160" x2="480" y2="160" stroke="#cbd5e1" strokeWidth="1" />
               {(() => {
                 const widthBetween = 440 / (chartData.length - 1);
-                const points = chartData.map((d, idx) => {
+                const points = chartData.map((row, idx) => {
                   const x = 40 + idx * widthBetween;
-                  const temp = Number(d.temperature || 20);
-                  const y = 160 - ((temp - 15) / 15) * 140;
+                  const kwh = Number(row.kwh || 0);
+                  const y = 160 - ((kwh - chartMinKwh) / chartRange) * 140;
                   return `${x},${y}`;
                 }).join(" ");
 
@@ -106,18 +106,18 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
-                    {chartData.map((d, idx) => {
+                    {chartData.map((row, idx) => {
                       const x = 40 + idx * widthBetween;
-                      const temp = Number(d.temperature || 20);
-                      const y = 160 - ((temp - 15) / 15) * 140;
+                      const kwh = Number(row.kwh || 0);
+                      const y = 160 - ((kwh - chartMinKwh) / chartRange) * 140;
                       return (
-                        <g key={`${d.timestamp}-${idx}`}>
+                        <g key={`${row.timestamp}-${idx}`}>
                           <circle cx={x} cy={y} r="4" fill="#3b82f6" />
                           <text x={x} y={y - 8} fontSize="9" textAnchor="middle" fill="#1e293b" fontWeight="600">
-                            {temp}°C
+                            {kwh}
                           </text>
                           <text x={x} y="180" fontSize="8" textAnchor="middle" fill="#94a3b8">
-                            {new Date(d.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            {new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                           </text>
                         </g>
                       );
@@ -132,7 +132,7 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
         </div>
 
         <div className="telemetry-panel">
-          <h3>Power Profile per Reading (kW)</h3>
+          <h3>Energy Profile per Reading (kWh)</h3>
           {chartData.length > 0 ? (
             <svg viewBox="0 0 500 200" className="telemetry-svg">
               <line x1="40" y1="160" x2="480" y2="160" stroke="#cbd5e1" strokeWidth="1" />
@@ -140,22 +140,21 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
                 const totalWidth = 440;
                 const barWidth = Math.min(30, (totalWidth / chartData.length) * 0.5);
                 const spacing = (totalWidth - barWidth * chartData.length) / (chartData.length + 1);
-                const maxPower = Math.max(...chartData.map((d) => Number(d.power_kw || 0)), 0.1);
 
-                return chartData.map((d, idx) => {
+                return chartData.map((row, idx) => {
                   const x = 40 + spacing + idx * (barWidth + spacing);
-                  const power = Number(d.power_kw || 0);
-                  const barHeight = (power / maxPower) * 140;
+                  const kwh = Number(row.kwh || 0);
+                  const barHeight = (kwh / chartMaxKwh) * 140;
                   const y = 160 - barHeight;
 
                   return (
-                    <g key={`${d.timestamp}-${idx}`}>
+                    <g key={`${row.timestamp}-${idx}`}>
                       <rect x={x} y={y} width={barWidth} height={barHeight} fill="#f59e0b" rx="2" />
                       <text x={x + barWidth / 2} y={y - 6} fontSize="9" textAnchor="middle" fill="#1e293b" fontWeight="600">
-                        {power.toFixed(1)}
+                        {kwh}
                       </text>
                       <text x={x + barWidth / 2} y="178" fontSize="8" textAnchor="middle" fill="#94a3b8">
-                        {d.device_id}
+                        {row.device_id}
                       </text>
                     </g>
                   );
@@ -176,9 +175,8 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
               <tr>
                 <th>Device ID</th>
                 <th>Timestamp</th>
-                <th>Temperature</th>
-                <th>Humidity</th>
-                <th>Power Load</th>
+                <th>Energy (kWh)</th>
+                <th>Location</th>
               </tr>
             </thead>
             <tbody>
@@ -186,9 +184,8 @@ function TelemetryDashboard({ data, role, deviceId, loading, error }) {
                 <tr key={`${row.timestamp}-${index}`}>
                   <td className="telemetry-device">{row.device_id}</td>
                   <td>{new Date(row.timestamp).toLocaleString()}</td>
-                  <td>{row.temperature} °C</td>
-                  <td>{row.humidity} %</td>
-                  <td><span className="telemetry-power-badge">{row.power_kw} kW</span></td>
+                  <td><span className="telemetry-power-badge">{row.kwh} kWh</span></td>
+                  <td>{row.location}</td>
                 </tr>
               ))}
             </tbody>
@@ -211,28 +208,45 @@ function App() {
   const idToken = auth.user?.id_token;
   const role = dataResponse?.role || "";
   const deviceId = dataResponse?.device_id || "";
-  const telemetryData = scopeTelemetryData(dataResponse?.data || [], deviceId);
+  const rows = Array.isArray(dataResponse?.data) ? dataResponse.data : [];
 
   useEffect(() => {
     if (!idToken) return;
 
     setLoadingProfile(true);
-    fetch(`${API_BASE}/api/profile`, { headers: { Authorization: `Bearer ${idToken}` } })
-      .then((res) => res.json())
-      .then((data) => setProfile(data))
+    fetch(`${API_BASE}/api/profile`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Profile request failed (${res.status})`);
+        return res.json();
+      })
+      .then((body) => setProfile(body))
+      .catch((err) => console.error(err))
       .finally(() => setLoadingProfile(false));
 
     setLoadingData(true);
     setDataError("");
-    fetch(`${API_BASE}/api/data`, { headers: { Authorization: `Bearer ${idToken}` } })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
-        return res.json();
+    fetch(`${API_BASE}/api/data`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) {
+          throw new Error(body.error || `Data request failed (${res.status})`);
+        }
+        if (body.error) {
+          throw new Error(body.error);
+        }
+        if (!Array.isArray(body.data)) {
+          throw new Error("Backend response is missing a data array.");
+        }
+        setDataResponse(body);
       })
-      .then((data) => setDataResponse(data))
       .catch((err) => {
         console.error(err);
-        setDataError("Failed to fetch data from cloud storage.");
+        setDataError(err.message || "Failed to fetch data from cloud storage.");
+        setDataResponse(null);
       })
       .finally(() => setLoadingData(false));
   }, [idToken]);
@@ -248,6 +262,16 @@ function App() {
     });
   };
 
+  if (auth.isLoading) {
+    return (
+      <div className="app-shell">
+        <main className="app">
+          <p className="muted">Loading authentication...</p>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <main className="app">
@@ -255,7 +279,14 @@ function App() {
           <h1>Cloud Computing App</h1>
         </header>
 
-        {auth.isAuthenticated && (
+        {!auth.isAuthenticated ? (
+          <section className="status-panel">
+            <p className="muted">Sign in to load telemetry from the backend.</p>
+            <button className="btn" onClick={() => auth.signinRedirect()}>
+              Sign in
+            </button>
+          </section>
+        ) : (
           <div className="grid">
             <section className="card card-wide status-card">
               <p className="status-line">
@@ -286,7 +317,7 @@ function App() {
 
             <section className="card card-wide">
               <TelemetryDashboard
-                data={telemetryData}
+                rows={rows}
                 role={role}
                 deviceId={deviceId}
                 loading={loadingData}
