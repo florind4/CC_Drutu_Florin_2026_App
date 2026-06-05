@@ -1,85 +1,192 @@
-import React, { useEffect, useState } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React, { useEffect, useState } from "react";
+import { useAuth } from "react-oidc-context";
+import { API_BASE, COGNITO_DOMAIN, LOGOUT_URI, OIDC_CONFIG } from "./config";
+import "./App.css";
 
-export default function Dashboard() {
-  const [data, setData] = useState([]);
-  const [metrics, setMetrics] = useState({ total: 0, avgTemp: 0, totalLoad: 0 });
+function App() {
+  const auth = useAuth();
 
+  const [profile, setProfile] = useState(null);
+  const [dataResponse, setDataResponse] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+  const [error, setError] = useState(null);
+  const [showToken, setShowToken] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const idToken = auth.user?.id_token;
+
+  // Call backend when we have an idToken
   useEffect(() => {
-    // Fetch data from your deployed Azure Function backend
-    fetch(`${process.env.REACT_APP_API_BASE}/api/telemetry`)
-      .then(res => res.json())
-      .then(res => {
-        if (res.success && res.data) {
-          setData(res.data);
-          
-          // Calculate KPIs
-          const total = res.data.length;
-          const avgTemp = res.data.reduce((acc, curr) => acc + curr.temperature, 0) / total;
-          const totalLoad = res.data.reduce((acc, curr) => acc + curr.powerLoad, 0);
-          
-          setMetrics({ total, avgTemp: avgTemp.toFixed(1), totalLoad: totalLoad.toFixed(0) });
-        }
+    if (!idToken) {
+      setProfile(null);
+      setDataResponse(null);
+      return;
+    }
+
+    setError(null);
+
+    // /api/profile
+    setLoadingProfile(true);
+    fetch(`${API_BASE}/api/profile`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Error calling /api/profile");
+        return res.json();
       })
-      .catch(err => console.error("Error loading dashboard data:", err));
-  }, []);
+      .then((data) => setProfile(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoadingProfile(false));
+
+    // /api/data
+    setLoadingData(true);
+    fetch(`${API_BASE}/api/data`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Error calling /api/data");
+        return res.json();
+      })
+      .then((data) => setDataResponse(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoadingData(false));
+  }, [idToken]);
+
+  const signOutRedirect = () => {
+    const clientId = OIDC_CONFIG.client_id;
+    const logoutUri = LOGOUT_URI;
+    const cognitoDomain = COGNITO_DOMAIN;
+
+    // Clear local OIDC user (react-oidc-context)
+    auth.removeUser();
+
+    // Redirect to Cognito logout endpoint
+    window.location.href =
+      `${cognitoDomain}/logout?client_id=${clientId}` +
+      `&logout_uri=${encodeURIComponent(logoutUri)}`;
+  };
+
+  const copyToken = async () => {
+    if (!idToken) return;
+    try {
+      await navigator.clipboard.writeText(idToken);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch (copyError) {
+      setError("Unable to copy token to clipboard.");
+    }
+  };
+
+  if (auth.isLoading) {
+    return (
+      <div className="app-shell">
+        <div className="status-panel">Loading authentication...</div>
+      </div>
+    );
+  }
+
+  if (auth.error) {
+    return (
+      <div className="app-shell">
+        <div className="status-panel status-panel-error">
+          Encountering error... {auth.error.message}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: '24px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
-      <h2 style={{ marginBottom: '24px', color: '#1e293b' }}>Telemetry Visualizer</h2>
-      
-      {/* KPI Cards Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <div style={{ color: '#64748b', fontSize: '14px' }}>Total Readings</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#0f172a' }}>{metrics.total}</div>
-        </div>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <div style={{ color: '#64748b', fontSize: '14px' }}>Avg Temperature</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#0f172a' }}>{metrics.avgTemp}°C</div>
-        </div>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <div style={{ color: '#64748b', fontSize: '14px' }}>Accumulated Load</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#0f172a' }}>{metrics.totalLoad} kW</div>
-        </div>
-      </div>
+    <div className="app-shell">
+      <div className="bg-orb bg-orb-left" />
+      <div className="bg-orb bg-orb-right" />
+      <main className="app">
+        <header className="hero">
+          <p className="hero-kicker">Identity + Serverless</p>
+          <h1>Cloud Computing App</h1>
+          <p className="hero-subtitle">
+            Secure frontend with Amazon Cognito authentication and Azure Functions APIs.
+          </p>
+        </header>
 
-      {/* Charts section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '32px' }}>
-        {/* Line Chart */}
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ marginBottom: '16px', color: '#334155' }}>Temperature Trajectory</h3>
-          <div style={{ height: '300px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="timestamp" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="temperature" stroke="#2563eb" name="Temperature (°C)" activeDot={{ r: 8 }} />
-              </LineChart>
-            </ResponsiveContainer>
+        {error && (
+          <div className="alert">
+            <strong>Error:</strong> {error}
           </div>
-        </div>
+        )}
 
-        {/* Bar Chart */}
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ marginBottom: '16px', color: '#334155' }}>Power Profile</h3>
-          <div style={{ height: '300px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="timestamp" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="powerLoad" fill="#10b981" name="Power Load (kW)" />
-              </BarChart>
-            </ResponsiveContainer>
+        <section className="card status-card">
+          {auth.isAuthenticated ? (
+            <>
+              <p className="status-line">
+                <span className="status-dot status-dot-online" />
+                Logged in as <strong>{auth.user?.profile?.email || "(no email claim)"}</strong>
+              </p>
+              <button className="btn btn-secondary" onClick={signOutRedirect}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="status-line">
+                <span className="status-dot" />
+                Not logged in
+              </p>
+              <button className="btn" onClick={() => auth.signinRedirect()}>
+                Sign in
+              </button>
+            </>
+          )}
+        </section>
+
+        {auth.isAuthenticated && (
+          <div className="grid">
+            <section className="card">
+              <div className="section-head">
+                <h2>Authentication Token</h2>
+                <div className="actions">
+                  <button
+                    className="btn btn-small btn-ghost"
+                    onClick={() => setShowToken((current) => !current)}
+                  >
+                    {showToken ? "Hide" : "Show"}
+                  </button>
+                  <button className="btn btn-small btn-ghost" onClick={copyToken}>
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+              <pre className="code-block">
+                ID Token: {showToken ? auth.user?.id_token : "••••••••••••••••••••"}
+              </pre>
+            </section>
+
+            <section className="card">
+              <h2>User Profile API Response</h2>
+              {loadingProfile ? (
+                <p className="muted">Loading profile...</p>
+              ) : profile ? (
+                <pre className="code-block">{JSON.stringify(profile, null, 2)}</pre>
+              ) : (
+                <p className="muted">No profile loaded yet.</p>
+              )}
+            </section>
+
+            <section className="card card-wide">
+              <h2>Data API Response</h2>
+              {loadingData ? (
+                <p className="muted">Loading data...</p>
+              ) : dataResponse ? (
+                <pre className="code-block">{JSON.stringify(dataResponse, null, 2)}</pre>
+              ) : (
+                <p className="muted">No data loaded yet.</p>
+              )}
+            </section>
           </div>
-        </div>
-      </div>
+        )}
+      </main>
     </div>
   );
 }
+
+export default App;

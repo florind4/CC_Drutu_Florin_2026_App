@@ -1,44 +1,100 @@
-const { BlobServiceClient } = require('@azure/storage-blob');
-const csv = require('csv-parser');
-const stream = require('stream');
+const {
+  authenticate,
+  jsonResponseWithCorrelation,
+  normalizeError,
+  preflightResponse,
+} = require("../shared/auth");
+const { emit, finishRequest, maskDeviceId, startRequest } = require("../shared/logging");
 
-// Endpoint to get telemetry data
-app.get('/api/telemetry', async (req, res) => {
-  try {
-    const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    const containerClient = blobServiceClient.getContainerClient('telemetry-data');
-    const blobClient = containerClient.getBlobClient('telemetry.csv');
+const allData = [
+  { device_id: "E-001", value: 10 },
+  { device_id: "E-002", value: 20 },
+];
 
-    // Download blob to a stream
-    const downloadBlockBlobResponse = await blobClient.download(0);
-    const csvData = [];
+module.exports = async function data(context, req) {
+  const request = startRequest(context, req, "/api/data");
 
-    downloadBlockBlobResponse.readableStreamBody
-      .pipe(csv())
-      .on('data', (row) => {
-        // Parse numbers correctly
-        csvData.push({
-          timestamp: row.timestamp,
-          deviceId: row.deviceId,
-          temperature: parseFloat(row.temperature),
-          powerLoad: parseFloat(row.powerLoad)
-        });
-      })
-      .on('end', () => {
-        // Dynamic security filtering based on user role (Lab02 requirement)
-        const userRole = req.user?.role; // From your Cognito auth middleware
-        const userDevice = req.user?.deviceId;
-
-        let filteredData = csvData;
-        if (userRole !== 'admin') {
-          filteredData = csvData.filter(item => item.deviceId === userDevice);
-        }
-
-        res.json({ success: true, data: filteredData });
-      });
-  } catch (error) {
-    console.error("Backend fetch error:", error);
-    res.status(500).json({ success: false, error: error.message });
+  if (req.method === "OPTIONS") {
+    context.res = preflightResponse(request.correlationId);
+    finishRequest(context, request, 204);
+    return;
   }
-});
+
+  try {
+    const auth = await authenticate(req);
+    const { role, device_id } = auth.claims;
+
+    let visibleData;
+
+    if (role === "admin") {
+      visibleData = allData;
+    } else if (role === "user") {
+      if (!device_id) {
+        emit(context, "warn", "authz.denied", {
+          correlationId: request.correlationId,
+          path: "/api/data",
+          code: "missing_device_id",
+          role,
+        });
+        context.res = jsonResponseWithCorrelation(
+          403,
+          {
+            error: "No device_id associated with this account",
+          },
+          request.correlationId
+        );
+        finishRequest(context, request, 403);
+        return;
+      }
+
+      visibleData = allData.filter((item) => item.device_id === device_id);
+    } else {
+      emit(context, "warn", "authz.denied", {
+        correlationId: request.correlationId,
+        path: "/api/data",
+        code: "unknown_role",
+        role,
+      });
+      context.res = jsonResponseWithCorrelation(
+        403,
+        { error: "Insufficient permissions" },
+        request.correlationId
+      );
+      finishRequest(context, request, 403);
+      return;
+    }
+
+    emit(context, "info", "authz.allowed", {
+      correlationId: request.correlationId,
+      path: "/api/data",
+      role,
+      deviceIdMasked: maskDeviceId(device_id),
+      returnedCount: visibleData.length,
+    });
+
+    context.res = jsonResponseWithCorrelation(
+      200,
+      {
+        role,
+        device_id,
+        data: visibleData,
+      },
+      request.correlationId
+    );
+    finishRequest(context, request, 200);
+  } catch (error) {
+    const normalized = normalizeError(error);
+    emit(context, normalized.status >= 500 ? "error" : "warn", "auth.failed", {
+      correlationId: request.correlationId,
+      path: "/api/data",
+      code: normalized.code,
+      reason: normalized.logMessage,
+    });
+    context.res = jsonResponseWithCorrelation(
+      normalized.status,
+      { error: normalized.clientMessage },
+      request.correlationId
+    );
+    finishRequest(context, request, normalized.status);
+  }
+};
