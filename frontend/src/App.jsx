@@ -137,6 +137,18 @@ function App() {
               )}
             </section>
 
+            {/* --- RESTORED RAW DATA SECTION --- */}
+            <section className="card card-wide">
+              <h2>Data API Response</h2>
+              {loadingData ? (
+                <p className="muted">Loading data...</p>
+              ) : dataResponse ? (
+                <pre className="code-block">{JSON.stringify(dataResponse, null, 2)}</pre>
+              ) : (
+                <p className="muted">No data loaded yet.</p>
+              )}
+            </section>
+
             {/* --- UPGRADED ADVANCED GRAPHICS SECTION --- */}
             <section className="card card-wide">
               <h2>Advanced Telemetry Dashboard</h2>
@@ -156,7 +168,6 @@ function App() {
                           <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0"/>
                         </linearGradient>
                       </defs>
-                      {/* Grid Lines */}
                       <line x1="40" y1="40" x2="480" y2="40" stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4" />
                       <line x1="40" y1="100" x2="480" y2="100" stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4" />
                       <line x1="40" y1="160" x2="480" y2="160" stroke="#334155" strokeWidth="2" />
@@ -164,8 +175,6 @@ function App() {
                       {(() => {
                         const telemetry = dataResponse.data;
                         const widthBetween = 440 / (telemetry.length - 1 || 1);
-                        
-                        // Calculate min/max for dynamic scaling
                         const temps = telemetry.map(d => Number(d.temperature || 0));
                         const minTemp = Math.min(...temps) - 2;
                         const maxTemp = Math.max(...temps) + 2;
@@ -213,13 +222,10 @@ function App() {
                         const totalWidth = 440;
                         const barWidth = Math.min(35, (totalWidth / telemetry.length) * 0.5);
                         const spacing = (totalWidth - (barWidth * telemetry.length)) / (telemetry.length + 1);
-
-                        // Find maximum value for dynamic scaling
                         const maxVal = Math.max(...telemetry.map(d => Number(d.power_kw || d.Power || d.power || d.humidity || d.Humidity || 0))) || 10;
 
                         return telemetry.map((d, idx) => {
                           const x = 40 + spacing + idx * (barWidth + spacing);
-                          // Auto-fallback mapping to find whatever secondary data is in the CSV
                           const val = Number(d.power_kw || d.Power || d.power || d.humidity || d.Humidity || 0);
                           const barHeight = (val / maxVal) * 120; 
                           const y = 160 - barHeight;
