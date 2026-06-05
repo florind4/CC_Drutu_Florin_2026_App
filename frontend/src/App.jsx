@@ -74,27 +74,40 @@ function App() {
     return <div className="app-shell"><div className="status-panel">Loading authentication...</div></div>;
   }
 
+  // Helper to determine if user is admin
+  const isAdmin = profile?.role === "admin";
+
   return (
     <div className="app-shell">
-      <div className="bg-orb bg-orb-left" />
-      <div className="bg-orb bg-orb-right" />
+      <div className="bg-orb bg-orb-left" style={{ opacity: 0.6, filter: 'blur(80px)' }} />
+      <div className="bg-orb bg-orb-right" style={{ opacity: 0.4, filter: 'blur(100px)', background: '#8b5cf6' }} />
+      
       <main className="app">
-        <header className="hero">
-          <p className="hero-kicker">Identity + Serverless</p>
-          <h1>Cloud Computing App</h1>
-          <p className="hero-subtitle">Secure frontend with Amazon Cognito authentication and Azure Functions APIs.</p>
+        <header className="hero" style={{ paddingBottom: '1rem' }}>
+          <p className="hero-kicker" style={{ color: '#38bdf8', fontWeight: 'bold', letterSpacing: '1px' }}>IDENTITY + SERVERLESS</p>
+          <h1 style={{ background: 'linear-gradient(to right, #e0f2fe, #818cf8)', WebkitBackgroundClip: 'text', color: 'transparent', fontSize: '3rem', margin: '0.5rem 0' }}>
+            Cloud Computing App
+          </h1>
+          <p className="hero-subtitle" style={{ color: '#94a3b8' }}>
+            Secure frontend with Amazon Cognito authentication and Azure Functions APIs.
+          </p>
         </header>
 
-        {error && <div className="alert"><strong>Error:</strong> {error}</div>}
+        {error && <div className="alert" style={{ borderLeft: '4px solid #ef4444' }}><strong>Error:</strong> {error}</div>}
 
-        <section className="card status-card">
+        <section className="card status-card" style={{ borderTop: '4px solid #38bdf8', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(10px)' }}>
           {auth.isAuthenticated ? (
             <>
               <p className="status-line">
-                <span className="status-dot status-dot-online" />
-                Logged in as <strong>{auth.user?.profile?.email || "(no email claim)"}</strong>
+                <span className="status-dot status-dot-online" style={{ boxShadow: '0 0 8px #10b981' }} />
+                Logged in as <strong style={{ color: '#f8fafc' }}>{auth.user?.profile?.email || "(no email claim)"}</strong>
+                {isAdmin && (
+                  <span style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: 'white', padding: '2px 10px', borderRadius: '12px', fontSize: '0.75rem', marginLeft: '12px', fontWeight: 'bold', letterSpacing: '0.5px', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+                    ADMIN
+                  </span>
+                )}
               </p>
-              <button className="btn btn-secondary" onClick={signOutRedirect}>Sign out</button>
+              <button className="btn btn-secondary" onClick={signOutRedirect} style={{ transition: 'all 0.2s' }}>Sign out</button>
             </>
           ) : (
             <>
@@ -107,64 +120,72 @@ function App() {
         {auth.isAuthenticated && (
           <div className="grid">
             
-            {/* --- RESTORED TOKEN SECTION --- */}
-            <section className="card">
-              <div className="section-head">
-                <h2>Authentication Token</h2>
-                <div className="actions">
-                  <button className="btn btn-small btn-ghost" onClick={() => setShowToken((current) => !current)}>
-                    {showToken ? "Hide" : "Show"}
-                  </button>
-                  <button className="btn btn-small btn-ghost" onClick={copyToken}>
-                    {copied ? "Copied" : "Copy"}
-                  </button>
+            {/* --- TOKEN & PROFILE SECTION --- */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', gridColumn: '1 / -1' }}>
+              <section className="card" style={{ border: '1px solid #1e293b' }}>
+                <div className="section-head">
+                  <h2 style={{ fontSize: '1.1rem', color: '#cbd5e1' }}>Authentication Token</h2>
+                  <div className="actions">
+                    <button className="btn btn-small btn-ghost" onClick={() => setShowToken((current) => !current)}>
+                      {showToken ? "Hide" : "Show"}
+                    </button>
+                    <button className="btn btn-small btn-ghost" onClick={copyToken}>
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <pre className="code-block" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                ID Token: {showToken ? auth.user?.id_token : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
-              </pre>
-            </section>
+                <pre className="code-block" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: '150px', overflowY: 'auto', background: '#0b1120', border: '1px solid #334155' }}>
+                  ID Token: {showToken ? auth.user?.id_token : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
+                </pre>
+              </section>
 
-            {/* --- RESTORED PROFILE SECTION --- */}
-            <section className="card">
-              <h2>User Profile API Response</h2>
-              {loadingProfile ? (
-                <p className="muted">Loading profile...</p>
-              ) : profile ? (
-                <pre className="code-block">{JSON.stringify(profile, null, 2)}</pre>
-              ) : (
-                <p className="muted">No profile loaded yet.</p>
-              )}
-            </section>
+              <section className="card" style={{ border: '1px solid #1e293b' }}>
+                <h2 style={{ fontSize: '1.1rem', color: '#cbd5e1', marginBottom: '1rem' }}>User Profile Identity</h2>
+                {loadingProfile ? (
+                  <p className="muted">Loading profile...</p>
+                ) : profile ? (
+                  <pre className="code-block" style={{ background: '#0b1120', border: '1px solid #334155' }}>{JSON.stringify(profile, null, 2)}</pre>
+                ) : (
+                  <p className="muted">No profile loaded yet.</p>
+                )}
+              </section>
+            </div>
 
-            {/* --- RESTORED RAW DATA SECTION --- */}
-            <section className="card card-wide">
-              <h2>Data API Response</h2>
-              {loadingData ? (
-                <p className="muted">Loading data...</p>
-              ) : dataResponse ? (
-                <pre className="code-block">{JSON.stringify(dataResponse, null, 2)}</pre>
-              ) : (
-                <p className="muted">No data loaded yet.</p>
-              )}
-            </section>
+            {/* --- STRICTLY ADMIN ONLY: GLOBAL DATA DUMP --- */}
+            {isAdmin && (
+              <section className="card card-wide" style={{ background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)', borderLeft: '4px solid #8b5cf6', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h2 style={{ color: '#c4b5fd', margin: 0 }}>Admin Console: Global Data Stream</h2>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Viewing all network devices</span>
+                </div>
+                {loadingData ? (
+                  <p className="muted" style={{ color: '#8b5cf6' }}>Intercepting global data...</p>
+                ) : dataResponse ? (
+                  <pre className="code-block" style={{ maxHeight: '250px', overflowY: 'auto', background: '#020617', border: '1px solid #334155', color: '#10b981' }}>
+                    {JSON.stringify(dataResponse, null, 2)}
+                  </pre>
+                ) : (
+                  <p className="muted">No network data detected.</p>
+                )}
+              </section>
+            )}
 
-            {/* --- UPGRADED ADVANCED GRAPHICS SECTION --- */}
-            <section className="card card-wide">
-              <h2>Advanced Telemetry Dashboard</h2>
+            {/* --- ADVANCED GRAPHICS SECTION --- */}
+            <section className="card card-wide" style={{ borderTop: '1px solid #1e293b', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }}>
+              <h2>Telemetry Dashboard</h2>
               {loadingData ? (
                 <p className="muted">Loading real-time telemetry...</p>
               ) : dataResponse && dataResponse.data && dataResponse.data.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2.5rem', marginTop: '1.5rem' }}>
                   
-                  {/* Advanced Chart 1: Temperature Area Graph */}
-                  <div>
-                    <h4 style={{ color: '#e2e8f0', marginBottom: '0.5rem', fontWeight: '600', letterSpacing: '0.5px' }}>Temperature Variance (°C)</h4>
-                    <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Real-time thermal trajectory across active nodes.</p>
-                    <svg viewBox="0 0 500 220" style={{ width: '100%', height: 'auto', backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}>
+                  {/* Chart 1 */}
+                  <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                    <h4 style={{ color: '#38bdf8', marginBottom: '0.5rem', fontWeight: '600', letterSpacing: '0.5px' }}>Temperature Variance (°C)</h4>
+                    <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Real-time thermal trajectory.</p>
+                    <svg viewBox="0 0 500 220" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
                       <defs>
                         <linearGradient id="tempGradient" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.6"/>
+                          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.4"/>
                           <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0"/>
                         </linearGradient>
                       </defs>
@@ -192,7 +213,7 @@ function App() {
                         return (
                           <>
                             <polygon points={areaPoints} fill="url(#tempGradient)" />
-                            <polyline fill="none" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={points} />
+                            <polyline fill="none" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={points} style={{ filter: 'drop-shadow(0px 4px 6px rgba(56, 189, 248, 0.4))' }} />
                             {telemetry.map((d, idx) => {
                               const x = 40 + idx * widthBetween;
                               const temp = Number(d.temperature || 0);
@@ -201,7 +222,7 @@ function App() {
                                 <g key={idx}>
                                   <circle cx={x} cy={y} r="6" fill="#0f172a" stroke="#38bdf8" strokeWidth="3" />
                                   <text x={x} y={y - 15} fontSize="12" textAnchor="middle" fill="#f8fafc" fontWeight="bold">{temp.toFixed(1)}</text>
-                                  <text x={x} y="180" fontSize="10" textAnchor="middle" fill="#64748b">{d.device_id}</text>
+                                  <text x={x} y="180" fontSize="10" textAnchor="middle" fill="#94a3b8">{d.device_id}</text>
                                 </g>
                               );
                             })}
@@ -211,11 +232,11 @@ function App() {
                     </svg>
                   </div>
 
-                  {/* Advanced Chart 2: Secondary Metric Bar Chart */}
-                  <div>
-                    <h4 style={{ color: '#e2e8f0', marginBottom: '0.5rem', fontWeight: '600', letterSpacing: '0.5px' }}>Secondary Telemetry</h4>
-                    <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Auto-maps to Power (kW) or Humidity based on datasets.</p>
-                    <svg viewBox="0 0 500 220" style={{ width: '100%', height: 'auto', backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}>
+                  {/* Chart 2 */}
+                  <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                    <h4 style={{ color: '#10b981', marginBottom: '0.5rem', fontWeight: '600', letterSpacing: '0.5px' }}>Secondary Telemetry</h4>
+                    <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Auto-maps available secondary metrics.</p>
+                    <svg viewBox="0 0 500 220" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
                       <line x1="40" y1="160" x2="480" y2="160" stroke="#334155" strokeWidth="2" />
                       {(() => {
                         const telemetry = dataResponse.data;
@@ -232,10 +253,9 @@ function App() {
 
                           return (
                             <g key={idx}>
-                              <rect x={x} y={y} width={barWidth} height={barHeight} fill="#10b981" rx="4" opacity="0.85" />
-                              <rect x={x} y={y} width={barWidth} height={barHeight} fill="url(#tempGradient)" style={{mixBlendMode: 'overlay'}} rx="4" />
+                              <rect x={x} y={y} width={barWidth} height={barHeight} fill="#10b981" rx="4" style={{ filter: 'drop-shadow(0px 4px 8px rgba(16, 185, 129, 0.3))' }} />
                               <text x={x + barWidth / 2} y={y - 8} fontSize="12" textAnchor="middle" fill="#f8fafc" fontWeight="bold">{val}</text>
-                              <text x={x + barWidth / 2} y="180" fontSize="10" textAnchor="middle" fill="#64748b">{d.device_id}</text>
+                              <text x={x + barWidth / 2} y="180" fontSize="10" textAnchor="middle" fill="#94a3b8">{d.device_id}</text>
                             </g>
                           );
                         });
