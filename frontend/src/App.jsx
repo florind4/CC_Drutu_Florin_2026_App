@@ -30,17 +30,9 @@ function App() {
     <div className="app-shell">
       <main className="app">
         <header className="hero">
+          <p className="hero-kicker">Identity + Serverless</p>
           <h1>Cloud Computing App</h1>
         </header>
-        
-        <section className="card status-card">
-          {auth.isAuthenticated ? (
-            <>
-              <p>Logged in as <strong>{auth.user?.profile?.email}</strong></p>
-              <button className="btn btn-secondary" onClick={() => { auth.removeUser(); window.location.href = `${COGNITO_DOMAIN}/logout?client_id=${OIDC_CONFIG.client_id}&logout_uri=${encodeURIComponent(LOGOUT_URI)}`; }}>Sign out</button>
-            </>
-          ) : <button className="btn" onClick={() => auth.signinRedirect()}>Sign in</button>}
-        </section>
 
         {auth.isAuthenticated && (
           <div className="grid">
@@ -64,32 +56,47 @@ function App() {
               <h2>Advanced Telemetry Dashboard</h2>
               {dataResponse?.data?.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                  {/* Temperature Chart */}
-                  <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#0f172a', borderRadius: '8px', padding: '10px' }}>
-                    <defs><linearGradient id="g1" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#38bdf8" stopOpacity="0.3"/><stop offset="100%" stopColor="#38bdf8" stopOpacity="0"/></linearGradient></defs>
+                  {/* TEMPERATURE CHART */}
+                  <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#0f172a', borderRadius: '8px' }}>
                     {(() => {
                       const telemetry = dataResponse.data;
                       const vals = telemetry.map(d => Number(d.temperature || d.value || 0));
-                      const min = Math.min(...vals) - 2; const range = (Math.max(...vals) - min) || 1;
-                      const points = telemetry.map((d, i) => `${40 + i*(420/(telemetry.length-1 || 1))},${180 - ((Number(d.temperature || d.value || 0) - min)/range)*120}`).join(' ');
+                      const min = Math.min(...vals) - 5; const range = (Math.max(...vals) - min) || 1;
+                      const points = telemetry.map((d, i) => `${50 + i * (400 / (telemetry.length - 1 || 1))},${180 - ((Number(d.temperature || d.value || 0) - min) / range) * 120}`).join(' ');
                       return (
                         <>
-                          <polygon points={`40,180 ${points} ${40+(telemetry.length-1)*(420/(telemetry.length-1 || 1))},180`} fill="url(#g1)" />
                           <polyline fill="none" stroke="#38bdf8" strokeWidth="3" points={points} />
-                          {telemetry.map((d, i) => <circle key={i} cx={40 + i*(420/(telemetry.length-1 || 1))} cy={180 - ((Number(d.temperature || d.value || 0) - min)/range)*120} r="5" fill="#38bdf8" />)}
+                          {telemetry.map((d, i) => {
+                            const val = Number(d.temperature || d.value || 0);
+                            const x = 50 + i * (400 / (telemetry.length - 1 || 1));
+                            const y = 180 - ((val - min) / range) * 120;
+                            return (
+                              <g key={i}>
+                                <circle cx={x} cy={y} r="5" fill="#38bdf8" />
+                                <text x={x} y={y - 10} fill="#fff" fontSize="12" textAnchor="middle">{val}</text>
+                              </g>
+                            );
+                          })}
                         </>
                       );
                     })()}
                   </svg>
-                  {/* Power Chart */}
-                  <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#0f172a', borderRadius: '8px', padding: '10px' }}>
+
+                  {/* POWER CHART */}
+                  <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#0f172a', borderRadius: '8px' }}>
                     {(() => {
                       const telemetry = dataResponse.data;
                       const max = Math.max(...telemetry.map(d => Number(d.power_kw || d.power || d.value || 0)), 1);
                       return telemetry.map((d, i) => {
                         const val = Number(d.power_kw || d.power || d.value || 0);
-                        const h = (val / max) * 150;
-                        return <rect key={i} x={40 + i * 50} y={180 - h} width="30" height={h} fill="#10b981" rx="4" />;
+                        const h = (val / max) * 140;
+                        const x = 40 + i * 50;
+                        return (
+                          <g key={i}>
+                            <rect x={x} y={180 - h} width="30" height={h} fill="#10b981" rx="4" />
+                            <text x={x + 15} y={180 - h - 10} fill="#fff" fontSize="12" textAnchor="middle">{val}</text>
+                          </g>
+                        );
                       });
                     })()}
                   </svg>
