@@ -140,7 +140,7 @@ function App() {
         {auth.isAuthenticated && (
           <div className="grid">
             
-            {/* ORIGINAL TOKEN SECTION */}
+            {/* 1. ORIGINAL TOKEN SECTION */}
             <section className="card">
               <div className="section-head">
                 <h2>Authentication Token</h2>
@@ -161,7 +161,7 @@ function App() {
               </pre>
             </section>
 
-            {/* ORIGINAL PROFILE SECTION */}
+            {/* 2. ORIGINAL PROFILE SECTION */}
             <section className="card">
               <h2>User Profile API Response</h2>
               {loadingProfile ? (
@@ -173,19 +173,21 @@ function App() {
               )}
             </section>
 
-            {/* ORIGINAL DATA JSON SECTION */}
+            {/* 3. THE DATA API RESPONSE SECTION YOU ASKED FOR! */}
             <section className="card card-wide">
               <h2>Data API Response</h2>
               {loadingData ? (
                 <p className="muted">Loading data...</p>
               ) : dataResponse ? (
-                <pre className="code-block">{JSON.stringify(dataResponse, null, 2)}</pre>
+                <pre className="code-block" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {JSON.stringify(dataResponse, null, 2)}
+                </pre>
               ) : (
                 <p className="muted">No data loaded yet.</p>
               )}
             </section>
 
-            {/* NEW GRAPHICS SECTION ADDED TO THE BOTTOM */}
+            {/* 4. THE GRAPHICS SECTION ADDED TO THE BOTTOM */}
             <section className="card card-wide">
               <h2>Advanced Telemetry Dashboard</h2>
               {loadingData ? (
