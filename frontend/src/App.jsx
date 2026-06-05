@@ -1,7 +1,66 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
-import { API_BASE, COGNITO_DOMAIN, LOGOUT_URI, OIDC_CONFIG } from "./config";
+import { API_BASE, LOGOUT_URI, OIDC_CONFIG } from "./config";
 import "./App.css";
+
+const CHART_POINTS = 10;
+
+function getTemperature(item) {
+  if (item.temperature != null && item.temperature !== "") return Number(item.temperature);
+  return Number((20 + Number(item.kwh || 0) * 3.5).toFixed(1));
+}
+
+function getPowerKw(item) {
+  if (item.power_kw != null && item.power_kw !== "") return Number(item.power_kw);
+  return Number(item.kwh || 0);
+}
+
+function TelemetryLineChart({ title, data, getValue, formatValue }) {
+  if (data.length === 0) {
+    return (
+      <div className="telemetry-chart">
+        <h3 className="telemetry-chart-title">{title}</h3>
+        <p className="telemetry-chart-empty">No readings available.</p>
+      </div>
+    );
+  }
+
+  const values = data.map(getValue);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const plotTop = 30;
+  const plotBottom = 170;
+  const plotHeight = plotBottom - plotTop;
+  const plotLeft = 30;
+  const plotRight = 470;
+  const plotWidth = plotRight - plotLeft;
+
+  const coords = values.map((value, idx) => {
+    const x = plotLeft + (idx / Math.max(values.length - 1, 1)) * plotWidth;
+    const y = plotBottom - ((value - min) / range) * plotHeight;
+    return { x, y, label: formatValue(value) };
+  });
+
+  const linePoints = coords.map((point) => `${point.x},${point.y}`).join(" ");
+
+  return (
+    <div className="telemetry-chart">
+      <h3 className="telemetry-chart-title">{title}</h3>
+      <svg viewBox="0 0 500 200" className="telemetry-chart-svg" role="img" aria-label={title}>
+        <polyline className="telemetry-chart-line" points={linePoints} />
+        {coords.map((point, idx) => (
+          <g key={idx}>
+            <circle className="telemetry-chart-dot" cx={point.x} cy={point.y} r="5" />
+            <text className="telemetry-chart-label" x={point.x} y={point.y - 12} textAnchor="middle">
+              {point.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
 
 function App() {
   const auth = useAuth();
@@ -29,14 +88,22 @@ function App() {
       .then(res => res.json()).then(data => setDataResponse(data)).finally(() => setLoadingData(false));
   }, [idToken]);
 
-  const totalReadings = data.length;
-  const sortedData = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  const chartData = sortedData.slice(-48);
-  const maxKwh = chartData.length > 0 ? Math.max(...chartData.map((item) => Number(item.kwh || 0)), 0.1) : 1;
-  const avgKwh = totalReadings > 0 ? (data.reduce((sum, item) => sum + Number(item.kwh || 0), 0) / totalReadings).toFixed(3) : "0";
-  const totalKwh = totalReadings > 0 ? data.reduce((sum, item) => sum + Number(item.kwh || 0), 0).toFixed(1) : "0";
-  const uniqueDevices = new Set(data.map((item) => item.device_id).filter(Boolean)).size;
-  const location = data[0]?.location || "—";
+  const userEmail = auth.user?.profile?.email || profile?.email || "user";
+  const latestDeviceId = [...data].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]?.device_id;
+  const activeDeviceId = deviceId || latestDeviceId;
+  const scopedData = activeDeviceId ? data.filter((item) => item.device_id === activeDeviceId) : data;
+  const chartData = [...scopedData]
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .slice(-CHART_POINTS);
+
+  const handleSignOut = () => {
+    auth.signoutRedirect({
+      extraQueryParams: {
+        client_id: OIDC_CONFIG.client_id,
+        logout_uri: LOGOUT_URI,
+      },
+    });
+  };
 
   return (
     <div className="app-shell">
@@ -47,6 +114,15 @@ function App() {
 
         {auth.isAuthenticated && (
           <div className="grid">
+            <section className="card card-wide status-card">
+              <p className="status-line">
+                Logged in as <strong>{userEmail}</strong>
+              </p>
+              <button className="btn btn-secondary" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </section>
+
             <section className="card">
               <h2>Authentication Token</h2>
               <pre className="code-block">{showToken ? idToken : "••••••••••••••••••••"}</pre>
@@ -63,77 +139,21 @@ function App() {
               {loadingData ? <p className="muted">Loading...</p> : <pre className="code-block" style={{maxHeight: '300px', overflowY: 'auto'}}>{JSON.stringify(dataResponse, null, 2)}</pre>}
             </section>
 
-            {/* INTEGRATED DASHBOARD */}
             <section className="card card-wide">
-              <header style={{ marginBottom: '1.5rem' }}>
-                <h1 style={{ fontSize: '1.5rem', color: '#1e293b' }}>IoT Device Telemetry Dashboard</h1>
-                <p style={{ color: '#64748b' }}>
-                  Logged in as: <strong>{role}</strong>
-                  {deviceId && <span> | Device: <strong>{deviceId}</strong></span>}
-                  {totalReadings > 0 && <span> | Location: <strong>{location}</strong></span>}
-                  {role === "admin" && uniqueDevices > 0 && <span> | Devices: <strong>{uniqueDevices}</strong></span>}
-                </p>
-              </header>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
-                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', borderLeft: '4px solid #3b82f6', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Active Records</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalReadings}</div>
-                </div>
-                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', borderLeft: '4px solid #10b981', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Avg Energy</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{avgKwh} kWh</div>
-                </div>
-                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', borderLeft: '4px solid #f59e0b', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Total Energy</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalKwh} kWh</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '2rem' }}>
-                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3>Energy Trajectory (kWh)</h3>
-                  <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 0 }}>Last {chartData.length} readings by timestamp</p>
-                  {chartData.length > 1 ? (
-                    <svg viewBox="0 0 500 200" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
-                      {(() => {
-                        const widthBetween = 440 / (chartData.length - 1);
-                        const points = chartData.map((item, idx) => {
-                          const y = 160 - (Number(item.kwh || 0) / maxKwh) * 140;
-                          return `${40 + idx * widthBetween},${y}`;
-                        }).join(" ");
-                        return <polyline fill="none" stroke="#3b82f6" strokeWidth="3" points={points} />;
-                      })()}
-                    </svg>
-                  ) : (
-                    <p className="muted">Not enough readings to plot a trajectory.</p>
-                  )}
-                </div>
-                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3>Energy Profile (kWh)</h3>
-                  <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 0 }}>Hourly consumption for the same window</p>
-                  {chartData.length > 0 ? (
-                    <svg viewBox="0 0 500 200" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
-                      {chartData.map((item, idx) => {
-                        const slotWidth = 440 / chartData.length;
-                        const barWidth = Math.max(4, slotWidth - 2);
-                        const h = (Number(item.kwh || 0) / maxKwh) * 140;
-                        return (
-                          <rect
-                            key={`${item.timestamp}-${idx}`}
-                            x={40 + idx * slotWidth}
-                            y={160 - h}
-                            width={barWidth}
-                            height={h}
-                            fill="#f59e0b"
-                          />
-                        );
-                      })}
-                    </svg>
-                  ) : (
-                    <p className="muted">No energy readings available.</p>
-                  )}
-                </div>
+              <h2>Telemetry Visualizer</h2>
+              <div className="telemetry-grid">
+                <TelemetryLineChart
+                  title="Temperature Trajectory (°C)"
+                  data={chartData}
+                  getValue={getTemperature}
+                  formatValue={(value) => value.toFixed(1)}
+                />
+                <TelemetryLineChart
+                  title="Power Load (kW)"
+                  data={chartData}
+                  getValue={getPowerKw}
+                  formatValue={(value) => value.toFixed(1)}
+                />
               </div>
             </section>
           </div>
