@@ -30,8 +30,13 @@ function App() {
   }, [idToken]);
 
   const totalReadings = data.length;
-  const avgTemp = totalReadings > 0 ? (data.reduce((sum, item) => sum + Number(item.temperature || 0), 0) / totalReadings).toFixed(1) : 0;
-  const totalPower = totalReadings > 0 ? data.reduce((sum, item) => sum + Number(item.power_kw || 0), 0).toFixed(1) : 0;
+  const sortedData = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const chartData = sortedData.slice(-48);
+  const maxKwh = chartData.length > 0 ? Math.max(...chartData.map((item) => Number(item.kwh || 0)), 0.1) : 1;
+  const avgKwh = totalReadings > 0 ? (data.reduce((sum, item) => sum + Number(item.kwh || 0), 0) / totalReadings).toFixed(3) : "0";
+  const totalKwh = totalReadings > 0 ? data.reduce((sum, item) => sum + Number(item.kwh || 0), 0).toFixed(1) : "0";
+  const uniqueDevices = new Set(data.map((item) => item.device_id).filter(Boolean)).size;
+  const location = data[0]?.location || "—";
 
   return (
     <div className="app-shell">
@@ -62,7 +67,12 @@ function App() {
             <section className="card card-wide">
               <header style={{ marginBottom: '1.5rem' }}>
                 <h1 style={{ fontSize: '1.5rem', color: '#1e293b' }}>IoT Device Telemetry Dashboard</h1>
-                <p style={{ color: '#64748b' }}>Logged in as: <strong>{role}</strong> {deviceId && <span>| Device: <strong>{deviceId}</strong></span>}</p>
+                <p style={{ color: '#64748b' }}>
+                  Logged in as: <strong>{role}</strong>
+                  {deviceId && <span> | Device: <strong>{deviceId}</strong></span>}
+                  {totalReadings > 0 && <span> | Location: <strong>{location}</strong></span>}
+                  {role === "admin" && uniqueDevices > 0 && <span> | Devices: <strong>{uniqueDevices}</strong></span>}
+                </p>
               </header>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
@@ -71,36 +81,58 @@ function App() {
                   <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalReadings}</div>
                 </div>
                 <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', borderLeft: '4px solid #10b981', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Avg Temperature</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{avgTemp} °C</div>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Avg Energy</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{avgKwh} kWh</div>
                 </div>
                 <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', borderLeft: '4px solid #f59e0b', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Accumulated Load</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalPower} kW</div>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Total Energy</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalKwh} kWh</div>
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '2rem' }}>
-                {/* Temp Chart */}
                 <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3>Temperature Trajectory (°C)</h3>
-                  <svg viewBox="0 0 500 200" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
-                    {data.length > 1 && (() => {
-                      const widthBetween = 440 / (data.length - 1);
-                      const points = data.map((d, idx) => `${40 + idx * widthBetween},${160 - ((Number(d.temperature || 20) - 15) / 15) * 140}`).join(' ');
-                      return <polyline fill="none" stroke="#3b82f6" strokeWidth="3" points={points} />;
-                    })()}
-                  </svg>
+                  <h3>Energy Trajectory (kWh)</h3>
+                  <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 0 }}>Last {chartData.length} readings by timestamp</p>
+                  {chartData.length > 1 ? (
+                    <svg viewBox="0 0 500 200" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
+                      {(() => {
+                        const widthBetween = 440 / (chartData.length - 1);
+                        const points = chartData.map((item, idx) => {
+                          const y = 160 - (Number(item.kwh || 0) / maxKwh) * 140;
+                          return `${40 + idx * widthBetween},${y}`;
+                        }).join(" ");
+                        return <polyline fill="none" stroke="#3b82f6" strokeWidth="3" points={points} />;
+                      })()}
+                    </svg>
+                  ) : (
+                    <p className="muted">Not enough readings to plot a trajectory.</p>
+                  )}
                 </div>
-                {/* Power Chart */}
                 <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3>Power Profile (kW)</h3>
-                  <svg viewBox="0 0 500 200" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
-                    {data.map((d, idx) => {
-                      const h = (Number(d.power_kw || 0) / 3) * 140;
-                      return <rect key={idx} x={40 + idx * 50} y={160 - h} width="30" height={h} fill="#f59e0b" />;
-                    })}
-                  </svg>
+                  <h3>Energy Profile (kWh)</h3>
+                  <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 0 }}>Hourly consumption for the same window</p>
+                  {chartData.length > 0 ? (
+                    <svg viewBox="0 0 500 200" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
+                      {chartData.map((item, idx) => {
+                        const slotWidth = 440 / chartData.length;
+                        const barWidth = Math.max(4, slotWidth - 2);
+                        const h = (Number(item.kwh || 0) / maxKwh) * 140;
+                        return (
+                          <rect
+                            key={`${item.timestamp}-${idx}`}
+                            x={40 + idx * slotWidth}
+                            y={160 - h}
+                            width={barWidth}
+                            height={h}
+                            fill="#f59e0b"
+                          />
+                        );
+                      })}
+                    </svg>
+                  ) : (
+                    <p className="muted">No energy readings available.</p>
+                  )}
                 </div>
               </div>
             </section>
