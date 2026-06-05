@@ -1,7 +1,27 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useAuth } from "react-oidc-context";
 import { API_BASE, COGNITO_DOMAIN, LOGOUT_URI, OIDC_CONFIG } from "./config";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from "recharts";
 import "./App.css";
+
+// Helper function to clean the extra quotes from the backend CSV parser
+const cleanRawData = (rawData) => {
+  if (!rawData || !Array.isArray(rawData)) return [];
+  return rawData.map((item) => {
+    const cleanItem = {};
+    for (const [key, value] of Object.entries(item)) {
+      // Remove leading/trailing quotes and trim spaces from keys and values
+      const cleanKey = key.replace(/^["']|["']$/g, "").trim();
+      const cleanVal = typeof value === "string" ? value.replace(/^["']|["']$/g, "").trim() : value;
+      
+      // Convert numeric strings to actual numbers for the graph
+      cleanItem[cleanKey] = !isNaN(cleanVal) && cleanVal !== "" ? Number(cleanVal) : cleanVal;
+    }
+    return cleanItem;
+  });
+};
 
 function App() {
   const auth = useAuth();
@@ -13,10 +33,17 @@ function App() {
   const [error, setError] = useState(null);
   const [showToken, setShowToken] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // State to toggle the new Admin Dashboard
+  const [showDashboard, setShowDashboard] = useState(false);
 
   const idToken = auth.user?.id_token;
 
-  // Call backend when we have an idToken
+  // Clean the data automatically whenever dataResponse changes
+  const cleanedTelemetryData = useMemo(() => {
+    return dataResponse?.data ? cleanRawData(dataResponse.data) : [];
+  }, [dataResponse]);
+
   useEffect(() => {
     if (!idToken) {
       setProfile(null);
@@ -58,10 +85,7 @@ function App() {
     const logoutUri = LOGOUT_URI;
     const cognitoDomain = COGNITO_DOMAIN;
 
-    // Clear local OIDC user (react-oidc-context)
     auth.removeUser();
-
-    // Redirect to Cognito logout endpoint
     window.location.href =
       `${cognitoDomain}/logout?client_id=${clientId}` +
       `&logout_uri=${encodeURIComponent(logoutUri)}`;
@@ -141,6 +165,75 @@ function App() {
 
         {auth.isAuthenticated && (
           <div className="grid">
+            
+            {/* NEW ADMIN DASHBOARD SECTION */}
+            {dataResponse && dataResponse.role === "admin" && cleanedTelemetryData.length > 0 && (
+              <section className="card card-wide">
+                <div className="section-head">
+                  <h2>Admin Telemetry Dashboard</h2>
+                  <button
+                    className="btn btn-small btn-secondary"
+                    onClick={() => setShowDashboard(!showDashboard)}
+                  >
+                    {showDashboard ? "Hide Dashboard" : "Show Dashboard"}
+                  </button>
+                </div>
+
+                {showDashboard && (
+                  <div className="dashboard-content" style={{ marginTop: '20px' }}>
+                    {/* The Graph */}
+                    <div style={{ width: '100%', height: 350, marginBottom: '30px' }}>
+                      <ResponsiveContainer>
+                        <LineChart data={cleanedTelemetryData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(17, 48, 83, 0.1)" />
+                          <XAxis 
+                            dataKey="timestamp" 
+                            tick={{ fontSize: 12, fill: '#5a6678' }} 
+                            tickFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          />
+                          <YAxis tick={{ fontSize: 12, fill: '#5a6678' }} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#0f172a', border: 'none', color: '#fff', borderRadius: '8px' }} 
+                            labelFormatter={(label) => new Date(label).toLocaleString()}
+                          />
+                          <Legend verticalAlign="top" height={36}/>
+                          <Line type="monotone" name="Temperature (°C)" dataKey="temperature" stroke="#0e7a6f" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                          <Line type="monotone" name="Humidity (%)" dataKey="humidity" stroke="#3f5d80" strokeWidth={3} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* The Table */}
+                    <div className="data-table-container">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Device ID</th>
+                            <th>Timestamp</th>
+                            <th>Temp (°C)</th>
+                            <th>Humidity (%)</th>
+                            <th>Power (kW)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cleanedTelemetryData.map((row, idx) => (
+                            <tr key={idx}>
+                              <td><strong>{row.device_id || "N/A"}</strong></td>
+                              <td>{row.timestamp ? new Date(row.timestamp).toLocaleString() : "N/A"}</td>
+                              <td>{row.temperature}</td>
+                              <td>{row.humidity}</td>
+                              <td>{row.power_kw}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Existing Sections */}
             <section className="card">
               <div className="section-head">
                 <h2>Authentication Token</h2>
@@ -173,7 +266,7 @@ function App() {
             </section>
 
             <section className="card card-wide">
-              <h2>Data API Response</h2>
+              <h2>Data API Response (Raw)</h2>
               {loadingData ? (
                 <p className="muted">Loading data...</p>
               ) : dataResponse ? (

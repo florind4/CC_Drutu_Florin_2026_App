@@ -259,3 +259,38 @@ h2 {
     align-items: flex-start;
   }
 }
+
+/* --- DATA TABLE STYLES --- */
+.data-table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.data-table th, .data-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.data-table th {
+  background: rgba(17, 48, 83, 0.04);
+  font-weight: 600;
+  color: #144d7e;
+  white-space: nowrap;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
