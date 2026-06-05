@@ -41,21 +41,24 @@ async function getCsvDataFromAzure(context) {
     const csvString = await streamToString(downloadBlockBlobResponse.readableStreamBody);
 
     // Parse the CSV String safely
-    const lines = csvString.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    if (lines.length < 2) return []; 
+    const lines = csvString
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim());
+    const headers = lines[0].split(",").map((h) => h.trim());
     const results = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',');
+      const values = lines[i].split(",");
       const row = {};
       headers.forEach((header, index) => {
         row[header] = values[index] ? values[index].trim() : "";
       });
       results.push(row);
     }
-    
+
     return results;
   } catch (error) {
     context.log.error("Error fetching CSV from Azure Storage:", error.message);
@@ -91,7 +94,11 @@ module.exports = async function data(context, req) {
           code: "missing_device_id",
           role,
         });
-        context.res = jsonResponseWithCorrelation(403, { error: "No device_id associated with this account" }, request.correlationId);
+        context.res = jsonResponseWithCorrelation(
+          403,
+          { error: "No device_id associated with this account" },
+          request.correlationId
+        );
         finishRequest(context, request, 403);
         return;
       }
@@ -104,7 +111,11 @@ module.exports = async function data(context, req) {
         code: "unknown_role",
         role,
       });
-      context.res = jsonResponseWithCorrelation(403, { error: "Insufficient permissions" }, request.correlationId);
+      context.res = jsonResponseWithCorrelation(
+        403,
+        { error: "Insufficient permissions" },
+        request.correlationId
+      );
       finishRequest(context, request, 403);
       return;
     }
@@ -117,7 +128,11 @@ module.exports = async function data(context, req) {
       returnedCount: visibleData.length,
     });
 
-    context.res = jsonResponseWithCorrelation(200, { role, device_id, data: visibleData }, request.correlationId);
+    context.res = jsonResponseWithCorrelation(
+      200,
+      { role, device_id, data: visibleData },
+      request.correlationId
+    );
     finishRequest(context, request, 200);
   } catch (error) {
     const normalized = normalizeError(error);
@@ -127,7 +142,11 @@ module.exports = async function data(context, req) {
       code: normalized.code,
       reason: normalized.logMessage,
     });
-    context.res = jsonResponseWithCorrelation(normalized.status, { error: normalized.clientMessage }, request.correlationId);
+    context.res = jsonResponseWithCorrelation(
+      normalized.status,
+      { error: normalized.clientMessage },
+      request.correlationId
+    );
     finishRequest(context, request, normalized.status);
   }
 };
