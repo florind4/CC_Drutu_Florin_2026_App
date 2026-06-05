@@ -1,67 +1,44 @@
-const { DefaultAzureCredential } = require("@azure/identity");
-const { BlobServiceClient } = require("@azure/storage-blob");
-const { authenticate, jsonResponseWithCorrelation, normalizeError, preflightResponse } = require("../shared/auth");
-const { emit, finishRequest, maskDeviceId, startRequest } = require("../shared/logging");
+const { BlobServiceClient } = require('@azure/storage-blob');
+const csv = require('csv-parser');
+const stream = require('stream');
 
-module.exports = async function data(context, req) {
-  const request = startRequest(context, req, "/api/data");
-  if (req.method === "OPTIONS") {
-    context.res = preflightResponse(request.correlationId);
-    finishRequest(context, request, 204);
-    return;
-  }
-
+// Endpoint to get telemetry data
+app.get('/api/telemetry', async (req, res) => {
   try {
-    const auth = await authenticate(req);
-    const { role, device_id } = auth.claims;
+    const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    const containerClient = blobServiceClient.getContainerClient('telemetry-data');
+    const blobClient = containerClient.getBlobClient('telemetry.csv');
 
-    const accountUrl = process.env.AZURE_STORAGE_ACCOUNT_URL;
-    if (!accountUrl) throw new Error("AZURE_STORAGE_ACCOUNT_URL is missing");
+    // Download blob to a stream
+    const downloadBlockBlobResponse = await blobClient.download(0);
+    const csvData = [];
 
-    const credential = new DefaultAzureCredential();
-    const blobServiceClient = new BlobServiceClient(accountUrl, credential);
-    const containerClient = blobServiceClient.getContainerClient("datasets");
-    const blobClient = containerClient.getBlobClient("sensor_data.csv");
-    
-    const downloadResponse = await blobClient.downloadToBuffer();
-    const csvString = downloadResponse.toString("utf-8");
+    downloadBlockBlobResponse.readableStreamBody
+      .pipe(csv())
+      .on('data', (row) => {
+        // Parse numbers correctly
+        csvData.push({
+          timestamp: row.timestamp,
+          deviceId: row.deviceId,
+          temperature: parseFloat(row.temperature),
+          powerLoad: parseFloat(row.powerLoad)
+        });
+      })
+      .on('end', () => {
+        // Dynamic security filtering based on user role (Lab02 requirement)
+        const userRole = req.user?.role; // From your Cognito auth middleware
+        const userDevice = req.user?.deviceId;
 
-    const lines = csvString.split(/\r?\n/).filter((line) => line.trim() !== "");
-    const headers = lines[0].split(",").map(h => h.trim());
-    
-    const allData = lines.slice(1).map((line) => {
-      const values = line.split(",");
-      let obj = {};
-      headers.forEach((header, i) => {
-        let val = values[i] ? values[i].trim() : "";
-        obj[header] = isNaN(val) || val === "" ? val : Number(val);
+        let filteredData = csvData;
+        if (userRole !== 'admin') {
+          filteredData = csvData.filter(item => item.deviceId === userDevice);
+        }
+
+        res.json({ success: true, data: filteredData });
       });
-      return obj;
-    });
-
-    let visibleData;
-    if (role === "admin") {
-      visibleData = allData;
-    } else if (role === "user") {
-      if (!device_id) {
-        context.res = jsonResponseWithCorrelation(403, { error: "No device_id" }, request.correlationId);
-        finishRequest(context, request, 403);
-        return;
-      }
-      visibleData = allData.filter((item) => item.device_id === device_id);
-    } else {
-      context.res = jsonResponseWithCorrelation(403, { error: "Insufficient permissions" }, request.correlationId);
-      finishRequest(context, request, 403);
-      return;
-    }
-
-    emit(context, "info", "authz.allowed", { correlationId: request.correlationId, path: "/api/data", role, returnedCount: visibleData.length });
-
-    context.res = jsonResponseWithCorrelation(200, { role, device_id, data: visibleData }, request.correlationId);
-    finishRequest(context, request, 200);
   } catch (error) {
-    const normalized = normalizeError(error);
-    context.res = jsonResponseWithCorrelation(normalized.status, { error: normalized.clientMessage }, request.correlationId);
-    finishRequest(context, request, normalized.status);
+    console.error("Backend fetch error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
-};
+});

@@ -1,138 +1,85 @@
-import React, { useEffect, useState } from "react";
-import { useAuth } from "react-oidc-context";
-import { API_BASE, LOGOUT_URI, OIDC_CONFIG } from "./config";
-import "./App.css";
+import React, { useEffect, useState } from 'react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// 1. TELEMETRY COMPONENT
-function TelemetryDashboard({ rows, role, deviceId, loading, error }) {
-  if (loading) return <p className="muted">Loading telemetry...</p>;
-  if (error) return <p className="telemetry-error">Error: {error}</p>;
-  if (!rows || rows.length === 0) return <p className="telemetry-empty">No telemetry data available.</p>;
-
-  const totalReadings = rows.length;
-  const avgKwh = (rows.reduce((sum, row) => sum + Number(row.kwh || 0), 0) / totalReadings).toFixed(3);
-  const totalKwh = rows.reduce((sum, row) => sum + Number(row.kwh || 0), 0).toFixed(1);
-  const chartMaxKwh = Math.max(...rows.map((row) => Number(row.kwh || 0)), 0.1);
-  const chartMinKwh = Math.min(...rows.map((row) => Number(row.kwh || 0)));
-  const chartRange = chartMaxKwh - chartMinKwh || 1;
-
-  return (
-    <div className="telemetry-dashboard">
-      <header className="telemetry-header">
-        <h2>IoT Device Telemetry Dashboard</h2>
-        <p className="telemetry-meta">Logged in as: <strong>{role}</strong> {deviceId && <span> | Device: <strong>{deviceId}</strong></span>}</p>
-      </header>
-      <div className="telemetry-kpi-grid">
-        <div className="telemetry-kpi telemetry-kpi-blue"><div className="telemetry-kpi-label">Active Records</div><div className="telemetry-kpi-value">{totalReadings}</div></div>
-        <div className="telemetry-kpi telemetry-kpi-green"><div className="telemetry-kpi-label">Avg Energy</div><div className="telemetry-kpi-value">{avgKwh} kWh</div></div>
-        <div className="telemetry-kpi telemetry-kpi-amber"><div className="telemetry-kpi-label">Total Energy</div><div className="telemetry-kpi-value">{totalKwh} kWh</div></div>
-      </div>
-      <div className="telemetry-charts-grid">
-        <div className="telemetry-panel">
-          <h3>Energy Trajectory (kWh)</h3>
-          <svg viewBox="0 0 500 200" className="telemetry-svg">
-            <line x1="40" y1="160" x2="480" y2="160" stroke="#cbd5e1" strokeWidth="1" />
-            {(() => {
-              const widthBetween = 440 / (rows.length - 1 || 1);
-              const points = rows.map((row, idx) => `${40 + idx * widthBetween},${160 - ((Number(row.kwh || 0) - chartMinKwh) / chartRange) * 140}`).join(" ");
-              return <polyline fill="none" stroke="#3b82f6" strokeWidth="3" points={points} />;
-            })()}
-          </svg>
-        </div>
-        <div className="telemetry-panel">
-          <h3>Energy Profile (kWh)</h3>
-          <svg viewBox="0 0 500 200" className="telemetry-svg">
-            <line x1="40" y1="160" x2="480" y2="160" stroke="#cbd5e1" strokeWidth="1" />
-            {rows.map((row, idx) => {
-              const barWidth = 30;
-              const x = 40 + idx * (barWidth + 10);
-              const kwh = Number(row.kwh || 0);
-              const barHeight = (kwh / chartMaxKwh) * 140;
-              return <rect key={idx} x={x} y={160 - barHeight} width={barWidth} height={barHeight} fill="#f59e0b" rx="2" />;
-            })}
-          </svg>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// 2. MAIN APP COMPONENT
-function App() {
-  const auth = useAuth();
-  const [profile, setProfile] = useState(null);
-  const [dataResponse, setDataResponse] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(false);
-  const [loadingData, setLoadingData] = useState(false);
-  const [dataError, setDataError] = useState("");
-  const [showToken, setShowToken] = useState(false);
-
-  const idToken = auth.user?.id_token;
+export default function Dashboard() {
+  const [data, setData] = useState([]);
+  const [metrics, setMetrics] = useState({ total: 0, avgTemp: 0, totalLoad: 0 });
 
   useEffect(() => {
-    if (!idToken) return;
-
-    // Fetch Profile
-    setLoadingProfile(true);
-    fetch(`${API_BASE}/api/profile`, { headers: { Authorization: `Bearer ${idToken}` } })
-      .then(res => res.json()).then(setProfile).catch(() => {}).finally(() => setLoadingProfile(false));
-
-    // Robust Data Fetch
-    setLoadingData(true);
-    setDataError("");
-    fetch(`${API_BASE}/api/data`, { headers: { Authorization: `Bearer ${idToken}` } })
-      .then(async (res) => {
-        const text = await res.text();
-        if (!res.ok) throw new Error(`Backend Error: ${res.status}`);
-        if (!text) return { data: [] };
-        try { return JSON.parse(text); } 
-        catch (e) { throw new Error("Backend returned invalid JSON."); }
+    // Fetch data from your deployed Azure Function backend
+    fetch(`${process.env.REACT_APP_API_BASE}/api/telemetry`)
+      .then(res => res.json())
+      .then(res => {
+        if (res.success && res.data) {
+          setData(res.data);
+          
+          // Calculate KPIs
+          const total = res.data.length;
+          const avgTemp = res.data.reduce((acc, curr) => acc + curr.temperature, 0) / total;
+          const totalLoad = res.data.reduce((acc, curr) => acc + curr.powerLoad, 0);
+          
+          setMetrics({ total, avgTemp: avgTemp.toFixed(1), totalLoad: totalLoad.toFixed(0) });
+        }
       })
-      .then(setDataResponse)
-      .catch((err) => setDataError(err.message))
-      .finally(() => setLoadingData(false));
-  }, [idToken]);
-
-  if (auth.isLoading) return <div className="app-shell"><main className="app"><p className="muted">Loading...</p></main></div>;
+      .catch(err => console.error("Error loading dashboard data:", err));
+  }, []);
 
   return (
-    <div className="app-shell">
-      <main className="app">
-        <header className="hero"><h1>Cloud Computing App</h1></header>
-        {!auth.isAuthenticated ? (
-          <section className="status-panel"><button className="btn" onClick={() => auth.signinRedirect()}>Sign in</button></section>
-        ) : (
-          <div className="grid">
-            <section className="card card-wide status-card">
-              <p>Logged in as <strong>{auth.user?.profile?.email}</strong></p>
-              <button className="btn btn-secondary" onClick={() => auth.signoutRedirect({ extraQueryParams: { client_id: OIDC_CONFIG.client_id, logout_uri: LOGOUT_URI } })}>Sign out</button>
-            </section>
-            
-            <section className="card">
-              <h2>Auth Token</h2>
-              <button className="btn btn-small btn-ghost" onClick={() => setShowToken(!showToken)}>{showToken ? "Hide" : "Show"}</button>
-              <pre className="code-block" style={{marginTop: '10px'}}>{showToken ? idToken : "••••••••••••••••••••"}</pre>
-            </section>
-            
-            <section className="card card-wide">
-              <h2>Data API Response</h2>
-              <pre className="code-block" style={{maxHeight: '200px', overflowY: 'auto'}}>{JSON.stringify(dataResponse, null, 2)}</pre>
-            </section>
-            
-            <section className="card card-wide">
-              <TelemetryDashboard 
-                rows={Array.isArray(dataResponse?.data) ? dataResponse.data : []} 
-                role={dataResponse?.role || ''} 
-                deviceId={dataResponse?.device_id || ''} 
-                loading={loadingData} 
-                error={dataError} 
-              />
-            </section>
+    <div style={{ padding: '24px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
+      <h2 style={{ marginBottom: '24px', color: '#1e293b' }}>Telemetry Visualizer</h2>
+      
+      {/* KPI Cards Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <div style={{ color: '#64748b', fontSize: '14px' }}>Total Readings</div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#0f172a' }}>{metrics.total}</div>
+        </div>
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <div style={{ color: '#64748b', fontSize: '14px' }}>Avg Temperature</div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#0f172a' }}>{metrics.avgTemp}°C</div>
+        </div>
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <div style={{ color: '#64748b', fontSize: '14px' }}>Accumulated Load</div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#0f172a' }}>{metrics.totalLoad} kW</div>
+        </div>
+      </div>
+
+      {/* Charts section */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '32px' }}>
+        {/* Line Chart */}
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ marginBottom: '16px', color: '#334155' }}>Temperature Trajectory</h3>
+          <div style={{ height: '300px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="timestamp" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="temperature" stroke="#2563eb" name="Temperature (°C)" activeDot={{ r: 8 }} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
-        )}
-      </main>
+        </div>
+
+        {/* Bar Chart */}
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ marginBottom: '16px', color: '#334155' }}>Power Profile</h3>
+          <div style={{ height: '300px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="timestamp" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="powerLoad" fill="#10b981" name="Power Load (kW)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
-export default App;
