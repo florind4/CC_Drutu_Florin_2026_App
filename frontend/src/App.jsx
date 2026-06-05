@@ -2,7 +2,14 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useAuth } from "react-oidc-context";
 import { API_BASE, COGNITO_DOMAIN, LOGOUT_URI, OIDC_CONFIG } from "./config";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
 } from "recharts";
 import "./App.css";
 
@@ -15,7 +22,7 @@ const cleanRawData = (rawData) => {
       // Remove leading/trailing quotes and trim spaces from keys and values
       const cleanKey = key.replace(/^["']|["']$/g, "").trim();
       const cleanVal = typeof value === "string" ? value.replace(/^["']|["']$/g, "").trim() : value;
-      
+
       // Convert numeric strings to actual numbers for the graph
       cleanItem[cleanKey] = !isNaN(cleanVal) && cleanVal !== "" ? Number(cleanVal) : cleanVal;
     }
@@ -33,7 +40,7 @@ function App() {
   const [error, setError] = useState(null);
   const [showToken, setShowToken] = useState(false);
   const [copied, setCopied] = useState(false);
-  
+
   // State to toggle the new Admin Dashboard
   const [showDashboard, setShowDashboard] = useState(false);
 
@@ -165,7 +172,6 @@ function App() {
 
         {auth.isAuthenticated && (
           <div className="grid">
-            
             {/* NEW ADMIN DASHBOARD SECTION */}
             {dataResponse && dataResponse.role === "admin" && cleanedTelemetryData.length > 0 && (
               <section className="card card-wide">
@@ -180,25 +186,52 @@ function App() {
                 </div>
 
                 {showDashboard && (
-                  <div className="dashboard-content" style={{ marginTop: '20px' }}>
+                  <div className="dashboard-content" style={{ marginTop: "20px" }}>
                     {/* The Graph */}
-                    <div style={{ width: '100%', height: 350, marginBottom: '30px' }}>
+                    <div style={{ width: "100%", height: 350, marginBottom: "30px" }}>
                       <ResponsiveContainer>
-                        <LineChart data={cleanedTelemetryData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
+                        <LineChart
+                          data={cleanedTelemetryData}
+                          margin={{ top: 10, right: 20, left: -20, bottom: 0 }}
+                        >
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(17, 48, 83, 0.1)" />
-                          <XAxis 
-                            dataKey="timestamp" 
-                            tick={{ fontSize: 12, fill: '#5a6678' }} 
-                            tickFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          <XAxis
+                            dataKey="timestamp"
+                            tick={{ fontSize: 12, fill: "#5a6678" }}
+                            tickFormatter={(tick) =>
+                              new Date(tick).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            }
                           />
-                          <YAxis tick={{ fontSize: 12, fill: '#5a6678' }} />
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#0f172a', border: 'none', color: '#fff', borderRadius: '8px' }} 
+                          <YAxis tick={{ fontSize: 12, fill: "#5a6678" }} />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "#0f172a",
+                              border: "none",
+                              color: "#fff",
+                              borderRadius: "8px",
+                            }}
                             labelFormatter={(label) => new Date(label).toLocaleString()}
                           />
-                          <Legend verticalAlign="top" height={36}/>
-                          <Line type="monotone" name="Temperature (°C)" dataKey="temperature" stroke="#0e7a6f" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                          <Line type="monotone" name="Humidity (%)" dataKey="humidity" stroke="#3f5d80" strokeWidth={3} />
+                          <Legend verticalAlign="top" height={36} />
+                          <Line
+                            type="monotone"
+                            name="Temperature (°C)"
+                            dataKey="temperature"
+                            stroke="#0e7a6f"
+                            strokeWidth={3}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                          <Line
+                            type="monotone"
+                            name="Humidity (%)"
+                            dataKey="humidity"
+                            stroke="#3f5d80"
+                            strokeWidth={3}
+                          />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -218,8 +251,12 @@ function App() {
                         <tbody>
                           {cleanedTelemetryData.map((row, idx) => (
                             <tr key={idx}>
-                              <td><strong>{row.device_id || "N/A"}</strong></td>
-                              <td>{row.timestamp ? new Date(row.timestamp).toLocaleString() : "N/A"}</td>
+                              <td>
+                                <strong>{row.device_id || "N/A"}</strong>
+                              </td>
+                              <td>
+                                {row.timestamp ? new Date(row.timestamp).toLocaleString() : "N/A"}
+                              </td>
                               <td>{row.temperature}</td>
                               <td>{row.humidity}</td>
                               <td>{row.power_kw}</td>
