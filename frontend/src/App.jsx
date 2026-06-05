@@ -11,12 +11,15 @@ function App() {
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState(null);
   const [showToken, setShowToken] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const idToken = auth.user?.id_token;
+  const data = dataResponse?.data || [];
+  const role = dataResponse?.role || '';
+  const deviceId = dataResponse?.device_id || '';
 
   useEffect(() => {
     if (!idToken) return;
+    
     setLoadingProfile(true);
     fetch(`${API_BASE}/api/profile`, { headers: { Authorization: `Bearer ${idToken}` } })
       .then(res => res.json()).then(data => setProfile(data)).finally(() => setLoadingProfile(false));
@@ -26,13 +29,18 @@ function App() {
       .then(res => res.json()).then(data => setDataResponse(data)).finally(() => setLoadingData(false));
   }, [idToken]);
 
+  // Metrics for Dashboard
+  const totalReadings = data.length;
+  const avgTemp = totalReadings > 0 ? (data.reduce((sum, item) => sum + Number(item.temperature || 0), 0) / totalReadings).toFixed(1) : 0;
+  const totalPower = totalReadings > 0 ? data.reduce((sum, item) => sum + Number(item.power_kw || 0), 0).toFixed(1) : 0;
+
   return (
     <div className="app-shell">
       <main className="app">
         <header className="hero">
           <h1>Cloud Computing App</h1>
         </header>
-        
+
         <section className="card status-card">
           {auth.isAuthenticated ? (
             <>
@@ -60,45 +68,44 @@ function App() {
               {loadingData ? <p className="muted">Loading...</p> : <pre className="code-block" style={{maxHeight: '300px', overflowY: 'auto'}}>{JSON.stringify(dataResponse, null, 2)}</pre>}
             </section>
 
+            {/* DASHBOARD INTEGRATION */}
             <section className="card card-wide">
-              <h2>Advanced Telemetry Dashboard</h2>
-              {dataResponse?.data?.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                  {/* CHART 1: TEMPERATURE (Line) */}
-                  <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#0f172a', borderRadius: '8px' }}>
-                    {(() => {
-                      const telemetry = dataResponse.data;
-                      const vals = telemetry.map(d => Number(d.temperature || d.value || 0));
-                      const max = Math.max(...vals) > 0 ? Math.max(...vals) : 100;
-                      const min = Math.min(...vals) > 0 ? Math.min(...vals) * 0.8 : 0;
-                      const range = (max - min) || 1;
+              <header style={{ marginBottom: '1rem' }}>
+                <h1 style={{ fontSize: '1.5rem' }}>IoT Device Telemetry Dashboard</h1>
+                <p>Logged in as: <strong>{role}</strong> {deviceId && <span>| Device: <strong>{deviceId}</strong></span>}</p>
+              </header>
 
-                      return telemetry.map((d, i) => {
-                        const val = Number(d.temperature || d.value || 0);
-                        const x = 40 + i * (420 / (telemetry.length - 1 || 1));
-                        const y = 180 - ((val - min) / range) * 140;
-                        return <circle key={i} cx={x} cy={y} r="6" fill="#38bdf8" />;
-                      });
-                    })()}
-                  </svg>
-                  
-                  {/* CHART 2: POWER (Bar) */}
-                  <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#0f172a', borderRadius: '8px' }}>
-                    {(() => {
-                      const telemetry = dataResponse.data;
-                      const vals = telemetry.map(d => Number(d.power_kw || d.power || d.value || 0));
-                      const max = Math.max(...vals) > 0 ? Math.max(...vals) : 100;
-                      
-                      return telemetry.map((d, i) => {
-                        const val = Number(d.power_kw || d.power || d.value || 0);
-                        const h = (val / max) * 150;
-                        const x = 40 + i * 50;
-                        return <rect key={i} x={x} y={190 - h} width="30" height={h} fill="#10b981" rx="4" />;
-                      });
-                    })()}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderLeft: '4px solid #3b82f6' }}>
+                  <div style={{ color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase' }}>Active Records</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalReadings}</div>
+                </div>
+                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderLeft: '4px solid #10b981' }}>
+                  <div style={{ color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase' }}>Avg Temperature</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{avgTemp} °C</div>
+                </div>
+                <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderLeft: '4px solid #f59e0b' }}>
+                  <div style={{ color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase' }}>Accumulated Load</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 'bold' }}>{totalPower} kW</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2.5rem' }}>
+                {/* Temperature Chart */}
+                <div style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3>Temperature Trajectory</h3>
+                  <svg viewBox="0 0 500 200" style={{ width: '100%' }}>
+                    {data.map((d, i) => <circle key={i} cx={40 + i * 50} cy={160 - Number(d.temperature || 0)*2} r="5" fill="#3b82f6" />)}
                   </svg>
                 </div>
-              ) : <p className="muted">No data available.</p>}
+                {/* Power Chart */}
+                <div style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3>Power Profile (kW)</h3>
+                  <svg viewBox="0 0 500 200" style={{ width: '100%' }}>
+                    {data.map((d, i) => <rect key={i} x={40 + i * 50} y={160 - Number(d.power_kw || 0)*20} width="30" height={Number(d.power_kw || 0)*20} fill="#f59e0b" />)}
+                  </svg>
+                </div>
+              </div>
             </section>
           </div>
         )}
