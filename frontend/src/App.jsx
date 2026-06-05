@@ -52,17 +52,13 @@ function App() {
     <div className="app-shell">
       <main className="app">
         <header className="hero">
-          <p className="hero-kicker">Identity + Serverless</p>
           <h1>Cloud Computing App</h1>
-          <p className="hero-subtitle">Secure frontend with Amazon Cognito authentication and Azure Functions APIs.</p>
         </header>
-
-        {error && <div className="alert"><strong>Error:</strong> {error}</div>}
 
         <section className="card status-card">
           {auth.isAuthenticated ? (
             <>
-              <p className="status-line"><span className="status-dot status-dot-online" /> Logged in as <strong>{auth.user?.profile?.email}</strong></p>
+              <p>Logged in as <strong>{auth.user?.profile?.email}</strong></p>
               <button className="btn btn-secondary" onClick={signOutRedirect}>Sign out</button>
             </>
           ) : (
@@ -74,7 +70,7 @@ function App() {
           <div className="grid">
             <section className="card">
               <h2>Authentication Token</h2>
-              <pre className="code-block">ID Token: {showToken ? idToken : "••••••••••••••••••••"}</pre>
+              <pre className="code-block">{showToken ? idToken : "••••••••••••••••••••"}</pre>
               <button className="btn btn-small btn-ghost" onClick={() => setShowToken(!showToken)}>{showToken ? "Hide" : "Show"}</button>
               <button className="btn btn-small btn-ghost" onClick={copyToken}>{copied ? "Copied" : "Copy"}</button>
             </section>
@@ -89,18 +85,21 @@ function App() {
               {loadingData ? <p className="muted">Loading...</p> : <pre className="code-block">{JSON.stringify(dataResponse, null, 2)}</pre>}
             </section>
 
-            {/* NEW GRAPHICS SECTION ADDED HERE */}
             <section className="card card-wide">
               <h2>Advanced Telemetry Dashboard</h2>
               {dataResponse?.data?.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                  {/* Chart 1: Temperature */}
+                  {/* Temperature Chart */}
                   <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
-                     {/* ... SVG logic for temperature ... */}
+                    {dataResponse.data.map((d, i) => (
+                      <circle key={i} cx={40 + i * 50} cy={160 - d.value} r="5" fill="#38bdf8" />
+                    ))}
                   </svg>
-                  {/* Chart 2: Secondary Metric */}
+                  {/* Secondary Metric Chart */}
                   <svg viewBox="0 0 500 220" style={{ width: '100%', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
-                     {/* ... SVG logic for secondary metric ... */}
+                    {dataResponse.data.map((d, i) => (
+                      <rect key={i} x={40 + i * 60} y={160 - d.value} width="30" height={d.value} fill="#10b981" />
+                    ))}
                   </svg>
                 </div>
               ) : <p className="muted">No data available.</p>}
