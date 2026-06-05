@@ -1,4 +1,5 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
+const { DefaultAzureCredential } = require("@azure/identity");
 const {
   authenticate,
   jsonResponseWithCorrelation,
@@ -7,7 +8,7 @@ const {
 } = require("../shared/auth");
 const { emit, finishRequest, maskDeviceId, startRequest } = require("../shared/logging");
 
-// Helper to convert the downloaded Azure Blob stream into a readable string
+// Helper to convert the downloaded Azure Blob stream into a string
 async function streamToString(readableStream) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -17,35 +18,35 @@ async function streamToString(readableStream) {
   });
 }
 
-// Connects to Azure Blob Storage, downloads sensor_data.csv, and parses it into JSON
+// Connects to Azure Blob Storage using your specific Environment Variables
 async function getCsvDataFromAzure(context) {
   try {
-    // These environment variables MUST be set in your Azure Container App
-    const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-    const containerName = process.env.STORAGE_CONTAINER_NAME; 
-    const blobName = "sensor_data.csv"; 
+    const accountUrl = process.env.AZURE_STORAGE_ACCOUNT_URL;
+    const containerName = process.env.DATASETS_CONTAINER_NAME;
+    const blobName = "sensor_data.csv";
 
-    if (!connectionString || !containerName) {
-      context.log.error("Missing Azure Storage credentials in Environment Variables.");
-      return []; // Return empty array so the app doesn't crash, just shows no data
+    if (!accountUrl || !containerName) {
+      context.log.error("Missing AZURE_STORAGE_ACCOUNT_URL or DATASETS_CONTAINER_NAME variables.");
+      return [];
     }
 
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    // DefaultAzureCredential automatically uses AZURE_CLIENT_ID from your environment variables
+    const credential = new DefaultAzureCredential();
+    const blobServiceClient = new BlobServiceClient(accountUrl, credential);
     const containerClient = blobServiceClient.getContainerClient(containerName);
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
 
-    // Download the file from Azure
+    // Download and read the CSV
     const downloadBlockBlobResponse = await blockBlobClient.download(0);
     const csvString = await streamToString(downloadBlockBlobResponse.readableStreamBody);
 
-    // Parse the CSV String
+    // Parse the CSV String safely
     const lines = csvString.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    if (lines.length < 2) return []; // Needs at least a header row and one data row
+    if (lines.length < 2) return []; 
 
     const headers = lines[0].split(',').map(h => h.trim());
     const results = [];
 
-    // Map each row's values to the corresponding header
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',');
       const row = {};
@@ -65,7 +66,6 @@ async function getCsvDataFromAzure(context) {
 module.exports = async function data(context, req) {
   const request = startRequest(context, req, "/api/data");
 
-  // 1. Handle CORS Preflight
   if (req.method === "OPTIONS") {
     context.res = preflightResponse(request.correlationId);
     finishRequest(context, request, 204);
@@ -73,20 +73,17 @@ module.exports = async function data(context, req) {
   }
 
   try {
-    // 2. Authenticate the User
     const auth = await authenticate(req);
     const { role, device_id } = auth.claims;
 
-    // 3. Fetch Data from Azure Blob Storage
+    // 1. Fetch CSV Data from Azure Blob Storage
     const allData = await getCsvDataFromAzure(context);
     let visibleData;
 
-    // 4. Role-Based Access Control (RBAC) Logic
+    // 2. Role-Based Access Control
     if (role === "admin") {
-      // Admins get everything
-      visibleData = allData;
+      visibleData = allData; // Admins get the full CSV dataset
     } else if (role === "user") {
-      // Users must have a device_id claim
       if (!device_id) {
         emit(context, "warn", "authz.denied", {
           correlationId: request.correlationId,
@@ -98,10 +95,9 @@ module.exports = async function data(context, req) {
         finishRequest(context, request, 403);
         return;
       }
-      // Filter the data so they only see rows matching their device_id
+      // Users get ONLY records matching their device_id
       visibleData = allData.filter((item) => item.device_id === device_id);
     } else {
-      // Unknown roles are blocked
       emit(context, "warn", "authz.denied", {
         correlationId: request.correlationId,
         path: "/api/data",
@@ -113,7 +109,6 @@ module.exports = async function data(context, req) {
       return;
     }
 
-    // 5. Log Success and Return Data
     emit(context, "info", "authz.allowed", {
       correlationId: request.correlationId,
       path: "/api/data",
@@ -124,9 +119,7 @@ module.exports = async function data(context, req) {
 
     context.res = jsonResponseWithCorrelation(200, { role, device_id, data: visibleData }, request.correlationId);
     finishRequest(context, request, 200);
-
   } catch (error) {
-    // 6. Handle Errors Gracefully
     const normalized = normalizeError(error);
     emit(context, normalized.status >= 500 ? "error" : "warn", "auth.failed", {
       correlationId: request.correlationId,
