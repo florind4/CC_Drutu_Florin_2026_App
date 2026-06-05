@@ -22,7 +22,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install tooling dependencies
-        run: npm ci
+        run: npm install
       - name: Prettier check
         run: npm run format:check
 
@@ -41,7 +41,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - name: Install dependencies
-        run: npm ci --include=optional
+        run: npm install --include=optional
       - name: Static syntax checks
         run: npm run check
 
@@ -60,7 +60,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
-        run: npm ci --include=optional
+        run: npm install --include=optional
       - name: Run tests
         env:
           CI: true
